@@ -1,0 +1,4 @@
+.venv/
+__pycache__/
+.idea/
+reddit_blocker.db
