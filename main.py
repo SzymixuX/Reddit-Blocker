@@ -3,8 +3,15 @@ from pydantic import BaseModel
 from typing import Optional
 from database import create_tables, get_connection
 from sqlite3 import IntegrityError
-
+from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 create_tables()
 
 class SubredditCreate(BaseModel):
