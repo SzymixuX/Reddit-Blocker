@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Reddit Blocker",
+  "version": "0.1",
+
+  "permissions": [
+    "tabs"
+  ],
+
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "https://www.reddit.com/r/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.reddit.com/r/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["blocked.html"],
+      "matches": ["https://www.reddit.com/*"]
+    }
+  ]
+}

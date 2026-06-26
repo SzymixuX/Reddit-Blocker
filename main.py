@@ -4,6 +4,8 @@ from typing import Optional
 from database import create_tables, get_connection
 from sqlite3 import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
+from services.reddit_service import get_subreddit_info
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
