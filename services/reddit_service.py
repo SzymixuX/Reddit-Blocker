@@ -14,10 +14,6 @@ def get_subreddit_info(subreddit_name: str):
         url,
         headers=headers
     )
-
-    print("STATUS:", response.status_code)
-    print("TEXT:", response.text[:300])
-
     return {
         "status": response.status_code
     }
