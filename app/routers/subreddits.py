@@ -9,6 +9,7 @@ from app.models import (
     SubredditResponse,
     StatsResponse
 )
+from app.services import blocking_service
 router = APIRouter()
 
 @router.get("/subreddits", response_model=list[SubredditResponse])
@@ -66,93 +67,26 @@ def get_subreddits(
     return result
 
 @router.get("/subreddits/{subreddit_name}", response_model=SubredditResponse)
-def get_subreddit(subreddit_name: str):
-    row = subreddit_repository.get_by_name(subreddit_name)
-
-    subreddit = subreddit_repository.row_to_subreddit_response(row)
-
-    if subreddit is None:
-        return None
-
-    return subreddit
+def get_subreddits(
+    category: Optional[str] = None,
+    is_nsfw: Optional[bool] = None,
+    manual_blocked: Optional[bool] = None
+):
+    return subreddit_repository.get_all(category, is_nsfw, manual_blocked)
 
 @router.get("/check/{subreddit_name}")
 def check_subreddit(subreddit_name: str):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT name, is_nsfw, manual_blocked FROM subreddits WHERE LOWER(name) = LOWER(?)",
-        (subreddit_name,)
-    )
-
-    row = cursor.fetchone()
-    conn.close()
-
-    if row is None:
-        return {
-            "subreddit": subreddit_name,
-            "blocked": False,
-            "reason": "not_found"
-        }
-
-    name = row[0]
-    is_nsfw = bool(row[1])
-    manual_blocked = bool(row[2])
-
-    if is_nsfw:
-        return {
-            "subreddit": name,
-            "blocked": True,
-            "reason": "nsfw"
-        }
-
-    if manual_blocked:
-        return {
-            "subreddit": name,
-            "blocked": True,
-            "reason": "manual_blocked"
-        }
-
-    return {
-        "subreddit": name,
-        "blocked": False,
-        "reason": "allowed"
-    }
+    return blocking_service.check_subreddit(subreddit_name)
 
 @router.post("/subreddits")
 def add_subreddit(subreddit: SubredditCreate):
-    conn = get_connection()
-    cursor = conn.cursor()
+    created = subreddit_repository.create(subreddit)
 
-    try:
-        cursor.execute("""
-            INSERT INTO subreddits (
-                name, is_nsfw, category, manual_blocked, manual_allowed,
-                confidence, source, description
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            subreddit.name.lower(),
-            int(subreddit.is_nsfw),
-            subreddit.category,
-            int(subreddit.manual_blocked),
-            int(subreddit.manual_allowed),
-            subreddit.confidence,
-            subreddit.source,
-            subreddit.description
-        ))
-
-        conn.commit()
-
-    except IntegrityError:
-        conn.close()
+    if not created:
         return {
             "message": "Subreddit already exists",
             "subreddit": subreddit.name.lower()
         }
-
-    conn.close()
 
     return {
         "message": "Subreddit added",
@@ -162,37 +96,10 @@ def add_subreddit(subreddit: SubredditCreate):
 def update_subreddit(subreddit_name: str, update: SubredditUpdate):
     update_data = update.model_dump(exclude_unset=True)
 
-    if not update_data:
-        return {"message": "No fields to update"}
+    updated = subreddit_repository.update(subreddit_name, update_data)
 
-    fields = []
-    values = []
-
-    for key, value in update_data.items():
-        fields.append(f"{key} = ?")
-
-        if isinstance(value, bool):
-            values.append(int(value))
-        else:
-            values.append(value)
-
-    values.append(subreddit_name.lower())
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        f"UPDATE subreddits SET {', '.join(fields)} WHERE name = ?",
-        values
-    )
-
-    conn.commit()
-
-    if cursor.rowcount == 0:
-        conn.close()
-        return {"message": "Subreddit not found"}
-
-    conn.close()
+    if not updated:
+        return {"message": "Subreddit not found or no fields to update"}
 
     return {
         "message": "Subreddit updated",
@@ -200,21 +107,10 @@ def update_subreddit(subreddit_name: str, update: SubredditUpdate):
     }
 @router.delete("/subreddits/{subreddit_name}")
 def delete_subreddit(subreddit_name: str):
-    conn = get_connection()
-    cursor = conn.cursor()
+    deleted = subreddit_repository.delete(subreddit_name)
 
-    cursor.execute(
-        "DELETE FROM subreddits WHERE name = ?",
-        (subreddit_name.lower(),)
-    )
-
-    conn.commit()
-
-    if cursor.rowcount == 0:
-        conn.close()
+    if not deleted:
         return {"message": "Subreddit not found"}
-
-    conn.close()
 
     return {
         "message": "Subreddit deleted",
@@ -223,31 +119,4 @@ def delete_subreddit(subreddit_name: str):
 
 @router.get("/stats", response_model=StatsResponse)
 def get_stats():
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT COUNT(*) FROM subreddits")
-    total_subreddits = cursor.fetchone()[0]
-
-    cursor.execute("SELECT COUNT(*) FROM subreddits WHERE is_nsfw = 1")
-    nsfw_subreddits = cursor.fetchone()[0]
-
-    cursor.execute("SELECT COUNT(*) FROM subreddits WHERE manual_blocked = 1")
-    manual_blocked = cursor.fetchone()[0]
-
-    cursor.execute("""
-        SELECT COUNT(*)
-        FROM subreddits
-        WHERE is_nsfw = 0
-        AND manual_blocked = 0
-    """)
-    allowed = cursor.fetchone()[0]
-
-    conn.close()
-
-    return {
-        "total_subreddits": total_subreddits,
-        "nsfw_subreddits": nsfw_subreddits,
-        "manual_blocked": manual_blocked,
-        "allowed": allowed
-    }
+    return subreddit_repository.get_stats()
