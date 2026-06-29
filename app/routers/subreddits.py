@@ -1,57 +1,17 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import Optional
-from database import create_tables, get_connection
+from fastapi import APIRouter
 from sqlite3 import IntegrityError
-from fastapi.middleware.cors import CORSMiddleware
-from services.reddit_service import get_subreddit_info
-
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+from typing import Optional
+from app.repositories import subreddit_repository
+from app.database import get_connection
+from app.models import (
+    SubredditCreate,
+    SubredditUpdate,
+    SubredditResponse,
+    StatsResponse
 )
-create_tables()
+router = APIRouter()
 
-class SubredditCreate(BaseModel):
-    name: str
-    is_nsfw: bool = False
-    category: Optional[str] = None
-    manual_blocked: bool = False
-    manual_allowed: bool = False
-    confidence: float = 1.0
-    source: str = "manual"
-    description: Optional[str] = None
-
-
-class SubredditUpdate(BaseModel):
-    is_nsfw: Optional[bool] = None
-    category: Optional[str] = None
-    manual_blocked: Optional[bool] = None
-    manual_allowed: Optional[bool] = None
-    confidence: Optional[float] = None
-    source: Optional[str] = None
-    description: Optional[str] = None
-
-class SubredditResponse(BaseModel):
-    name: str
-    is_nsfw: bool
-    category: Optional[str] = None
-    manual_blocked: bool
-    manual_allowed: bool
-    confidence: float
-    source: str
-    description: Optional[str] = None
-
-class StatsResponse(BaseModel):
-    total_subreddits: int
-    nsfw_subreddits: int
-    manual_blocked: int
-    allowed: int
-@app.get("/subreddits", response_model=list[SubredditResponse])
+@router.get("/subreddits", response_model=list[SubredditResponse])
 def get_subreddits(
     category: Optional[str] = None,
     is_nsfw: Optional[bool] = None,
@@ -105,36 +65,18 @@ def get_subreddits(
 
     return result
 
-@app.get("/subreddits/{subreddit_name}", response_model=SubredditResponse)
+@router.get("/subreddits/{subreddit_name}", response_model=SubredditResponse)
 def get_subreddit(subreddit_name: str):
-    conn = get_connection()
-    cursor = conn.cursor()
+    row = subreddit_repository.get_by_name(subreddit_name)
 
-    cursor.execute("""
-        SELECT name, is_nsfw, category, manual_blocked, manual_allowed,
-               confidence, source, description
-        FROM subreddits
-        WHERE name = ?
-    """, (subreddit_name.lower(),))
+    subreddit = subreddit_repository.row_to_subreddit_response(row)
 
-    row = cursor.fetchone()
-    conn.close()
-
-    if row is None:
+    if subreddit is None:
         return None
 
-    return {
-        "name": row[0],
-        "is_nsfw": bool(row[1]),
-        "category": row[2],
-        "manual_blocked": bool(row[3]),
-        "manual_allowed": bool(row[4]),
-        "confidence": row[5],
-        "source": row[6],
-        "description": row[7]
-    }
+    return subreddit
 
-@app.get("/check/{subreddit_name}")
+@router.get("/check/{subreddit_name}")
 def check_subreddit(subreddit_name: str):
     conn = get_connection()
     cursor = conn.cursor()
@@ -178,7 +120,7 @@ def check_subreddit(subreddit_name: str):
         "reason": "allowed"
     }
 
-@app.post("/subreddits")
+@router.post("/subreddits")
 def add_subreddit(subreddit: SubredditCreate):
     conn = get_connection()
     cursor = conn.cursor()
@@ -216,7 +158,7 @@ def add_subreddit(subreddit: SubredditCreate):
         "message": "Subreddit added",
         "data": subreddit
     }
-@app.patch("/subreddits/{subreddit_name}")
+@router.patch("/subreddits/{subreddit_name}")
 def update_subreddit(subreddit_name: str, update: SubredditUpdate):
     update_data = update.model_dump(exclude_unset=True)
 
@@ -256,7 +198,7 @@ def update_subreddit(subreddit_name: str, update: SubredditUpdate):
         "message": "Subreddit updated",
         "updated_fields": update_data
     }
-@app.delete("/subreddits/{subreddit_name}")
+@router.delete("/subreddits/{subreddit_name}")
 def delete_subreddit(subreddit_name: str):
     conn = get_connection()
     cursor = conn.cursor()
@@ -279,7 +221,7 @@ def delete_subreddit(subreddit_name: str):
         "subreddit": subreddit_name.lower()
     }
 
-@app.get("/stats", response_model=StatsResponse)
+@router.get("/stats", response_model=StatsResponse)
 def get_stats():
     conn = get_connection()
     cursor = conn.cursor()
